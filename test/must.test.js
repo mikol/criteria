@@ -1,6 +1,6 @@
 'use strict';
 
-require('../lib/criteria/criteria'); /* globals scope, test */
+require('../criteria'); /* globals scope, test */
 
 scope('Must Assertion Tests',
 function () {
