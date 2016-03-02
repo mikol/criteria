@@ -1,0 +1,226 @@
+#!/usr/bin/env node
+
+'use strict';
+
+var defer = require('defer');
+var is = require('is');
+
+// ----------------------------------------------------------------------------
+
+if (is.undefined(process.send)) {
+  (function () {
+    var fork = require('child_process').fork;
+    var fs = require('fs');
+    var os = require('os');
+    var path = require('path');
+
+    var LINE_RE = /^(.*)$/mg;
+    var TRIM_RE = /^\s*|\s*$/;
+
+    var MAX_PROCESSES = os.cpus().length - 1;
+
+    var filenames = [];
+    var pending = 0;
+    var time = Date.now();
+    var total = {
+      fails: 0,
+      skips: 0,
+      tests: 0
+    };
+
+    function formatDuration(ms) {
+      var r = ms % 1000;
+      var s = (ms - r) / 1000;
+
+      // Milliseconds
+      var output = '.' + (r < 10 ? '00' : (r < 100 ? '0' : '')) + r;
+
+      r = s % 60;
+      var m = (s - r) / 60;
+
+      // Seconds
+      output = ':' + (r < 10 ? '0' : '') + r + output;
+
+      r = m % 60;
+      var h = (m - r) / 60;
+
+      // Minutes
+      output = ':' + (r < 10 ? '0' : '') + r + output;
+
+      // Hours
+      output = (h < 10 ? '0' : '') + h + output;
+
+      return output;
+    }
+
+    function indent(n) {
+      return new Array(n + 1).join('  ');
+    }
+
+    function pad(string) {
+      var delta = 5 - ('' + string).length;
+
+      if (delta > 0) {
+        return new Array(delta + 1).join(' ') + string;
+      }
+
+      return string;
+    }
+
+    function pluralize(n, strings) {
+      return n === 1 ? strings[0] : strings[1];
+    }
+
+    function ingest(input, root) {
+      for (var x = 0, nx = input.length; x < nx; ++x) {
+        var filename = path.resolve(root, input[x]);
+        var stats = fs.statSync(filename);
+
+        if (stats.isDirectory()) {
+          ingest(fs.readdirSync(filename), filename);
+        } else {
+          filenames.push(filename);
+        }
+      }
+    }
+
+    function run() {
+      var input = filenames.slice();
+      var nx = input.length;
+      var nxPerWorker = Math.floor(nx / MAX_PROCESSES);
+      var remainder = nx % MAX_PROCESSES;
+
+      var x = Math.ceil(Math.min(MAX_PROCESSES, nx));
+      while (x--) {
+        var worker = fork(__filename);
+        var fnames = input.splice(0, nxPerWorker + (remainder ? 1 : 0));
+
+        worker.on('message', finish);
+        worker.send({filenames: fnames});
+        ++pending;
+        if (remainder > 0) {
+          --remainder;
+        }
+      }
+    }
+
+    function finish(payload) {
+      var scopes = payload.scopes;
+
+      for (var x = 0, nx = scopes.length; x < nx; ++x) {
+        next(scopes[x], 0);
+      }
+
+      if (--pending === 0) {
+        var duration = Date.now() - time;
+        var hr = '-----------------------------------------------------------';
+        var prefix = total.fails === 0 ? ' ⚑' : ' ×';
+
+        console.log(hr);
+        console.log('', formatDuration(duration), prefix,
+            pad(total.tests), pluralize(total.tests, ['Test ', 'Tests']), '  ',
+            pad(total.fails), pluralize(total.fails, ['Fail ', 'Fails']), '  ',
+            pad(total.skips), pluralize(total.skips, ['Skip ', 'Skips']));
+        console.log(hr);
+      }
+
+      if (total.fails > 0) {
+        process.exit(1);
+      }
+    }
+
+    function next(scope, nest) {
+      if (scope.skipped) {
+        return;
+      }
+
+      var nFails = 0;
+      var nSkips = 0;
+      var nTests = 0;
+
+      var scopes = scope.scopes;
+      var tests = scope.tests;
+
+      console.log('', formatDuration(scope.duration),
+          indent(nest) + ' ⊙', scope.description);
+
+      for (var x = 0, nx = tests.length; x < nx; ++x) {
+        var test = tests[x];
+        var description = test.description;
+        var duration = formatDuration(test.duration);
+
+        ++nTests;
+        ++total.tests;
+
+        if (test.failed) {
+          ++total.fails;
+          ++nFails;
+
+          var stack = (test.output.stack || test.output)
+            .replace(LINE_RE, indent(nest + 1) + '$1')
+            .replace(TRIM_RE, '');
+
+          console.log('', duration, indent(nest + 1) + ' ✕ FAIL:', description);
+          console.log('', '            ', indent(nest + 1) + ' ≣', stack);
+        } else if (test.skipped) {
+          ++total.skips;
+          ++nSkips;
+
+          console.log('', duration, indent(nest + 1) + ' ↓ skip:', description);
+        } else {
+          console.log('', duration, indent(nest + 1) + ' • pass:', description);
+        }
+      }
+
+      for (x = 0, nx = scopes.length; x < nx; ++x) {
+        next(scopes[x], nest + 1);
+      }
+    }
+
+    ingest(process.argv.slice(2), process.cwd());
+    run();
+  }());
+} else {
+  (function () {
+    var runner = require('../lib/runner');
+
+    var pending = 0;
+    var scopes = [];
+
+    process.on('message', function (payload) {
+      var filenames = payload.filenames;
+      for (var x = 0, nx = filenames.length; x < nx; ++x) {
+        ++pending;
+        require(filenames[x]);
+      }
+    });
+
+    runner.one('scope', function () {
+      // Allow top-level scopes to register before running them.
+      defer(function () {
+        runner.run();
+      });
+    });
+
+    runner.on('scope', function (scope) {
+      if (scope.scope === runner) {
+        scope.promise.then(function () {
+          scopes.push(scope);
+        });
+      }
+    });
+
+    runner.on('finish', function () {
+      defer(function () {
+        process.send({
+          scopes: scopes.map(function (x) { return x.toObject(); })
+        });
+
+        defer(function () {
+          runner.off();
+          process.exit();
+        });
+      });
+    });
+  }());
+}
