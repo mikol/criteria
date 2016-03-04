@@ -50,7 +50,7 @@ function () {
   test('Nested scope mutations do not affect outer scopes.',
   function (must) {
     must.true(function () {
-      return this.a === 1 && this.b === undefined;
+      return this.a === 1 && is.undefined(this.b);
     });
   });
 });

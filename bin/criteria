@@ -7,15 +7,12 @@ var is = require('is');
 
 // ----------------------------------------------------------------------------
 
-if (is.undefined(process.send)) {
+if (is.nil(process.send)) {
   (function () {
     var fork = require('child_process').fork;
     var fs = require('fs');
     var os = require('os');
     var path = require('path');
-
-    var LINE_RE = /^(.*)$/mg;
-    var TRIM_RE = /^\s*|\s*$/;
 
     var MAX_PROCESSES = os.cpus().length - 1;
 
@@ -156,9 +153,7 @@ if (is.undefined(process.send)) {
           ++total.fails;
           ++nFails;
 
-          var stack = (test.output.stack || test.output)
-            .replace(LINE_RE, indent(nest + 1) + '$1')
-            .replace(TRIM_RE, '');
+          var stack = test.output.stack || test.output;
 
           console.log('', duration, indent(nest + 1) + ' ✕ FAIL:', description);
           console.log('', '            ', indent(nest + 1) + ' ≣', stack);
