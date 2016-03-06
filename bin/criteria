@@ -68,9 +68,18 @@ if (is.nil(process.send)) {
       return n === 1 ? strings[0] : strings[1];
     }
 
+    function isHiddenFile(filename) {
+      return /^\./.test(path.basename(filename));
+    }
+
     function ingest(input, root) {
       for (var x = 0, nx = input.length; x < nx; ++x) {
         var filename = path.resolve(root, input[x]);
+
+        if (isHiddenFile(filename)) {
+          continue;
+        }
+
         var stats = fs.statSync(filename);
 
         if (stats.isDirectory()) {
@@ -94,7 +103,9 @@ if (is.nil(process.send)) {
 
         worker.on('message', finish);
         worker.send({filenames: fnames});
+
         ++pending;
+
         if (remainder > 0) {
           --remainder;
         }
@@ -119,10 +130,36 @@ if (is.nil(process.send)) {
             pad(total.fails), pluralize(total.fails, ['Fail ', 'Fails']), '  ',
             pad(total.skips), pluralize(total.skips, ['Skip ', 'Skips']));
         console.log(hr);
-      }
 
-      if (total.fails > 0) {
-        process.exit(1);
+        if (total.fails > 0) {
+          process.exit(1);
+        }
+      }
+    }
+
+    function formatFailsBefore(runnable, nest) {
+      var _before = runnable._before;
+      for (var x = 0, nx = _before.length; x < nx; ++x) {
+        var before = _before[x];
+        if (before.failed) {
+          var duration = formatDuration(before.duration);
+          var description = before.description;
+          console.log('', duration, indent(nest) + ' ⊘ OOPS:', description);
+          console.log('', before.output.stack || before.output);
+        }
+      }
+    }
+
+    function formatFailsAfter(runnable, nest) {
+      var _after = runnable._after;
+      for (var x = 0, nx = _after.length; x < nx; ++x) {
+        var after = _after[x];
+        if (after.failed) {
+          var duration = formatDuration(after.duration);
+          var description = after.description;
+          console.log('', duration, indent(nest) + ' ☹ OOPS:', description);
+          console.log('', after.output.stack || after.output);
+        }
       }
     }
 
@@ -141,8 +178,13 @@ if (is.nil(process.send)) {
       console.log('', formatDuration(scope.duration),
           indent(nest) + ' ⊙', scope.description);
 
+      formatFailsBefore(scope, nest + 1);
+
       for (var x = 0, nx = tests.length; x < nx; ++x) {
         var test = tests[x];
+
+        formatFailsBefore(test, nest + 1);
+
         var description = test.description;
         var duration = formatDuration(test.duration);
 
@@ -153,10 +195,8 @@ if (is.nil(process.send)) {
           ++total.fails;
           ++nFails;
 
-          var stack = test.output.stack || test.output;
-
           console.log('', duration, indent(nest + 1) + ' ✕ FAIL:', description);
-          console.log('', '            ', indent(nest + 1) + ' ≣', stack);
+          console.log('', test.output.stack || test.output);
         } else if (test.skipped) {
           ++total.skips;
           ++nSkips;
@@ -165,7 +205,11 @@ if (is.nil(process.send)) {
         } else {
           console.log('', duration, indent(nest + 1) + ' • pass:', description);
         }
+
+        formatFailsAfter(test, nest + 1);
       }
+
+      formatFailsAfter(scope, nest + 1);
 
       for (x = 0, nx = scopes.length; x < nx; ++x) {
         next(scopes[x], nest + 1);
@@ -206,15 +250,15 @@ if (is.nil(process.send)) {
     });
 
     runner.on('finish', function () {
-      defer(function () {
-        process.send({
-          scopes: scopes.map(function (x) { return x.toObject(); })
-        });
+      process.send({
+        scopes: scopes.map(function (x) { return x.toObject(); })
+      }, function (error) {
+        if (error) {
+          console.error(error.stack || error);
+        }
 
-        defer(function () {
-          runner.off();
-          process.exit();
-        });
+        runner.off();
+        process.exit();
       });
     });
   }());

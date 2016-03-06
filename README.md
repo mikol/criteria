@@ -1,2 +1,2 @@
 # criteria
-Experimental async test framework.
+A test framework with built-in promise support.

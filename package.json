@@ -1,7 +1,7 @@
 {
   "name": "criteria",
-  "version": "0.0.1",
-  "description": "Experimental async test framework.",
+  "version": "0.0.2",
+  "description": "A test framework with built-in promise support.",
   "main": "criteria.js",
   "directories": {
     "test": "test"
@@ -34,6 +34,7 @@
   "homepage": "https://github.com/mikol/criteria#readme",
   "dependencies": {
     "defer": "git+https://github.com/mikol/defer.git",
+    "defer-each": "git+https://github.com/mikol/defer-each.git",
     "is": "git+https://github.com/mikol/is.git",
     "observable": "git+https://github.com/mikol/observable.git",
     "promise": "git+https://github.com/mikol/promise.git",

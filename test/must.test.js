@@ -4,9 +4,11 @@ require('../criteria'); /* globals scope, test */
 
 scope('Must Assertion Tests',
 function () {
+  var error = new Error('');
+
   scope.before(function () {
     this.before = true;
-    this.error = new Error('');
+    this.error = error;
   });
 
   test('Oughta pass.',
@@ -21,15 +23,17 @@ function () {
 
   test('Oughta resolve.',
   function (must) {
-    must.resolve(Promise.resolve(this.before), function (value) {
-      must.true(() => value === this.before);
+    var self = this;
+    return must.resolve(Promise.resolve(true), function (value) {
+      must.true(() => value === self.before);
     });
   });
 
   test('Oughta reject.',
   function (must) {
-    must.reject(Promise.reject(this.error), function (reason) {
-      must.true(() => reason === this.error);
+    var self = this;
+    return must.reject(Promise.reject(error), function (reason) {
+      must.true(() => reason === self.error);
     });
   });
 });

@@ -207,14 +207,14 @@ function () {
 
   var scopeRan;
 
-  test('Inner scopes start running before outer scopes.',
+  test('Inner scope runs before outer scope.',
   function (must) {
     must.true(() => scopeRan !== undefined);
   });
 
-  test('Inner scopes return control to outer scopes before finishing.',
+  test('Inner scope runs to completion before returning to outer scope.',
   function (must) {
-    must.true(() => scopeRan === true);
+    must.true(() => scopeRan === '†');
   });
 
   scope('Inner scope.',
